@@ -1,0 +1,336 @@
+<style>
+    p, ul {
+        font-family: Calibri;
+        font-size: medium;
+    }
+
+    .code {
+        font-family: "Courier New";
+    }
+
+    .codeBlock {
+        font-family: "Courier New";
+        font-weight: bold;
+    }
+    pre code {
+        background-color: #eee;
+        border: 1px solid #999;
+        display: block;
+        padding: 5px;
+    }
+
+</style>
+
+<h1>Introduction<h1></h1>
+    <p> The HTTP protocol is an internet protocol made up of TCP and IP protocols. When a browser or some other HTTP client sends an HTTP request to a machine, the data is sent in packets. These packets are assembled by the HTTP server and the server may choose to respond with some data requested by the client over the same request connection.</p>
+
+    <p>An HTTP server is a program that listens and responds to HTTP requests coming on a specific port of the machine's address. A machine can have multiple addresses:</p>
+    <ul>
+        <li>An IPV4 loopback address which resolves to itself. For example, 127.0.0.1, or 192.168.1.123</li>
+        <li>A static internet adddress, for example, 10.11.12.13</li>
+    </ul>
+
+    <p>An HTTP server may choose to listen on a  specific address or perhaps, all the machine addresses using a 0.0.0.0 address.</p>
+
+    <p>Go provides the <span class="code">net</span> package that contains a few  utility packages to handle networking related stuff:</p>
+    <ul>
+        <li>
+            The <span class="code">net</span> package contains the <span class="code">http</span> package which  allows browsers/http clients to make HTTP requests, and allows servers to listen and process incoming http requests. Since this package is a sub-package of the <span class="code">net</span> package, the typical Go import path will be as follows:
+            <p class="code">import "net/http"</p>
+        </li>
+        <li>
+            The <span class="code">net</span> package also has the  <span class="code">smtp</span> package to send emails using SMTP protocol.
+        </li>
+    </ul>
+<p>See <span class="code">https://golang.org/pkg/net/#pkg-subdirectories</span> for more details<p></p>
+
+<h1>Simple HTTP server<h1></h1>
+    <p>The <span class="code">http.ListenAndServe</span> function starts an HTTP server and <b>locks the process</b>. This means that any code below this function call will not be executed. The process will be terminated if this function returns an error or if the process is killed using a keyboard interrupt (using ctrl+c):</p>
+
+
+    <p class="codeBlock">func ListenAndServe(addr string, handler Handler) error</p>
+
+    <p>The <span class="code">http.ListenAndServe</span> function internally creates a tcp listener on address <span class="code">addr</span> using <span class="code">net.listen</span> function which returns a <span class="code">net.Listener</span> and uses it with <span class="code">http.Serve</span> function to listen to incoming connections using <span class="code">handler</span>.</p>
+
+    <p>The <span class="code">addr</span> argument of type <span class="code">string></span> is the address of the machine on which the server will be spawned. It is the combination of IP address and port which looks like <span class="code">"<i>ip-address:port</i>"</span>. Go provides a few short cuts; you can use <span class="code">":yourportnumber"</span>, <span class="code">":http"</span> or <span class="code">":https"</span>:</p>
+    <ul>
+        <li>You can use <span class="code">":portnumber"</span> as well without an IP address in which case it will be reachable from all the addresses of the machine.</li>
+        <li>You can also use <span class="code">":http"</span> as the <span class="code">addr</span> argument value for address port ":80"</li>
+        <li>You can also use <span class="code">":https"</span> as the <span class="code">addr</span> argument value for address port ":443"</li>
+    </ul>
+
+    <p>The <span class="code">handler</span> argument of the type <span class="code">Handler</span> interface handles the incoming HTTP requests. The <span class="code">Handler</span> interface looks like below:</p>
+
+<pre><code>type Handler interface {
+    <i>ServeHTTP</i>(ResponseWriter, *Request)
+}</code></pre>
+
+    <p>We can pass a value of the type that implements this interface as an argument to the <span class="code">ListenAndServe</span> function, but typically a <span class="code">nil</span> is passed in (details below)</p>
+
+    <h2>ServeHTTP function</h2>
+    <p>Recall that the <span class="code">handle</span> argument type is <span class="code">Handler</span>, which is an interface that exposes a <span class="code">ServeHTTP</span> method. When the HTTP server is started by invoking <span class="code">ListenAndServe(addr, handler)</span> function, any incoming HTTP request will trigger the <span class="code">ServeHTTP</span> method of the <span class="code">handler</span> argument. The main job of <span class="code">ServeHTTP</span> method is to respond to the request with some data</p>
+
+    <p class="codeBlock">ServeHTTP(res http.ResponseWriter, req *http.Request)</p>
+
+    <p>The <span class="code">res</span> argument contains the response object of interface type <span class="code">ResponseWriter</span>. This interface defines the <span class="code">Write</span> method which is used to write data to the HTTP response. It also has other methods to add an HTTP status code and manipulate response headers
+    </p>
+
+    <p>the <span class="code">Write</span> method signature of <span class="code">ResponseWriter</span> interface is as follows:</p>
+
+    <p class="codeBlock">Write([]byte) (int, error)</p>
+
+    <p>It returns the number of bytes written to the response and an error if it fails. We can simply ignore these values but the number of bytes written can be useful to send <span class="code">Content-Length</span> response header.</p>
+
+    <p>The interesting thing to note is that the <span class="code">io.Writer</span> interface also defines a <span class="code">Write</span> method with the <u>exact signature</u>. Hence, the <span class="code">res</span> object which is an object of  type <span class="code">http.ResponseWriter</span> interface, can also be treated as an object of type <span class="code">io.Writer</span> interface (polymorphism).</p>
+
+    <p>And because <span class="code">res</span> can be treated as an object of type <span class="code">io.Writer</span>, the following methods can be used to write data to <span class="code">res</span>:
+
+    <p class="codeBlock">func WriteString(w io.Writer, s string) (n int, err error)</p>
+    <p class="codeBlock">func Fprint(w io.Writer, a ...interface{}) (n int, err error)</p>
+    <p class="codeBlock">func Fprintf(w io.Writer, format string, a ...interface{}) (n int, err error)</p>
+
+<pre><code>func main() {
+    // Create an instance of SimpleHandler. There are no field to initialize
+    simpleHandler := SimpleHandler{}
+
+    // Listen in on port 9000 on any address and use our simple handler
+    // which implements the Handler interface
+    http.ListenAndServe(":9000", simpleHandler)
+}
+
+// SimpleHandler implements the Handler interface
+type SimpleHandler struct {}
+
+// This method gets invoked for all incoming requests. The response gets
+// sent back to the client when this method returns
+func (sh SimpleHandler) ServeHTTP(res http.ResponseWriter, req *http.Request) {
+    // Create response binary data
+    bytes := []byte("Hello World")
+
+    // Write the binary data to the response object using ResponseWriter.write method:
+    // 	Write([]byte) (int, error) --> returns the number of bytes written to
+    // the response and an error if Write() call fails.
+    // We can simply ignore these values but the number of bytes written can be
+    // useful to send Content-Length response header.
+    res.Write(bytes)
+
+    // Since both http.ResponseWriter and io.Writer interface implement the same
+    // Write([]byte) (int, error), we can treat res as an io.Writer and use
+    // any method that gets passed an io.Writer
+    fmt.Fprintf(res, "Time now: %s", time.Now().Format("RFC822"))
+}</code></pre>
+
+    <h2>ServeMux struct</h2>
+    <p>What we need is a route based control where different functions handle the response of different URL paths. <span class="code">ServeMux</span> can accept a function for a specific route such that an incoming request with a URL matching that route will execute the corresponding function.</p>
+
+    <p><span class="code">ServeMux</span> is a built-in <span class="code">struct</span> type exported from the <span class="code">http</span> package that acts as HTTP request multiplexer. We can create an instance of <span class="code">ServeMux</span> and pass it as the <span class="code">handler</span> to the <span class="code">ListenAndServe()</span> call. This is possible because <span class="code">ServeMux</span> implements the <span class="code">ServeHTTP</span> method which makes it implement the <span class="code">Handler</span> interface. <b>The <span class="code">ServeHTTP</span> method implemented by the <span class="code">ServeMux</span> calls the appropriate handler function for the incoming request based on the URL route pattern</b>.</p>
+
+    <p>For example, if <span class="code">ServeMux</span> has handler functions for <span class="code">/api/</span> and <span class="code">/api/users</span> routes, and a client makes an HTTP request with <span class="code">:9000/api/users</span> URL, the handler function registered with <span class="code">/api/users</span> will be invoked.</p>
+
+    <p>To get a <span class="code">ServeMux</span> instance, we need to call <span class="code">http.NewServeMux</span> function. This function returns an instance of <span class="code">ServeMux</span> with the loaded capability to handle requests based on routes:</p>
+    <p class="codeBlock">mux := http.NewServeMux()</p>
+
+    <p> Internally, <span class="code">NewServeMux</span> returns the new pointer instance of <span class="code">ServeMux</span> using <span class="code">new(ServeMux)</span> function call. We can also use <span class="code">mux := &http.ServeMux{}</span> syntax to do the same thing. The reason why we need a pointer because its method has pointer receiver and we are passing it as interface of <span class="code">Handler</span> type.</p>
+
+    <p> <span class="code">ServerMux</span> is used by registering all required routes and their corresponding handlers using  <span class="code">ServerMux.HandleFunc</span> method, which has the following signature
+    <p class="codeBlock">HandleFunc(route string, handler func(ResponseWriter, *Request))
+    </p>
+    <p>and then passing the  <span class="code">ServerMux</span> instance to  <span class="code">ListenAndServer</span>:</p>
+    <p class="codeBlock">ListenAndServe(addr, mux)</p></p>
+
+    <pre><code>func main() {
+    // Create an instance of ServeMux
+    mux := http.NewServeMux()
+
+    // Register a few routes
+    mux.HandleFunc("/", func(writer http.ResponseWriter, request *http.Request) {
+        fmt.Fprintf(writer, "This is the root page")
+    })
+
+    mux.HandleFunc("/help", func(writer http.ResponseWriter, request *http.Request) {
+        fmt.Fprintf(writer,"This is the help page. Time now: %s", time.Now().Format(time.RFC822))
+    })
+
+    // Listen in on port 9000 on any address and use our simple handler
+    // which implements the Handler interface
+    http.ListenAndServe(":9000", mux)
+}</code></pre>
+
+    <h2>DefaultServeMux</h2>
+    <p>We can pass <span class="code">nil</span> as the value of <span class="code">handler</span> to the <span class="code">ListenAndServe</span> function. When we pass <span class="code">nil</span>, Go will internally use the <span class="code">http.DefaultServeMux</span> which is a global <span class="code">ServeMux</span> instance.</p>
+
+    <p>We can add routes and handler functions to this instance using similar methods, but using the functions exposed by the <span class="code">http</span> package: <span class="code">http.HandleFunc</span> function does the exact same thing that the <span class="code">mux.HandleFunc</span> does; it adds a handler function to the <span class="code">http.DefaultServeMux</span> to handle HTTP requests of a specific route path.</p>
+
+    <p>This modified code will behave exactly the same as the previous one. This time, we avoided the step of creating a custom <span class="code">ServeMux</span> to handle the incoming HTTP requests and used the default one provided by the <span class="code">http</span> package.</p>
+
+    <pre><code>func main() {
+    // Register a few routes
+    http.HandleFunc("/", func(writer http.ResponseWriter, request *http.Request) {
+        fmt.Fprintf(writer, "This is the root page")
+    })
+    http.HandleFunc("/help", func(writer http.ResponseWriter, request *http.Request) {
+        fmt.Fprintf(writer,"This is the help page. Time now: %s", time.Now().Format(time.RFC822))
+    })
+
+    // Listen in on port 9000 on any address and use our simple handler
+    // which implements the Handler interface
+    http.ListenAndServe(":9000", nil)
+}</code></pre>
+
+<h2>Better responses</h2>
+    <p>A normal HTTP response contains headers to inform the browser about the response. The <span class="code">ResponseWriter</span> interface offers the following useful methods.
+<ul>
+<li>The <span class="code">ResponseWriter.Header()</span> returns the object of <span class="code">Header</span> type. This object contains the map of header keys and values. We can use <span class="code">Add</span>, <span class="code">Set</span> and <span class="code">Del</span> methods to manipulate the response headers. We can use the <span class="code">Get</span> method to read existing response headers.</li>
+        <li>The <span class="code">ResponseWriter.WriteHeader(int)</span> method writes the HTTP status code header to the response. However, this method is called implicitly by Go when first <span class="code">ResponseWriter.Write()</span> call is made with status code 200 (<span class="code">http.StatusOK</span> constant value). We should pass valid HTTP status integer code or use constants provided by the <span class="code">http</span> package.</li>
+</ul></p>
+
+    <p>The following code adds a <span class="code">Content-Type</span> header and resets the <span class="code">Date</span> header from the response. The code also sends a JSON string as a response. To notify the browser that the incoming response is of the JSON type, the code sets <span class="code">application/json</span> as the value of <span class="code">Content-Type</span> header:</p>
+
+    <pre><code>func main() {
+    // Register a few routes
+    http.HandleFunc("/", func(writer http.ResponseWriter, request *http.Request) {
+
+        // Get the response header
+        header := writer.Header()
+
+        // Let browser know we are sending back JSON
+        header.Set("Content-Type", "application/json")
+
+        // Reset header data
+        header.Set("Date", time.Now().Format(time.RFC3339))
+
+        // Reset header status
+        writer.WriteHeader(http.StatusOK)
+
+        // Respond with a JSON string
+        fmt.Fprint(writer, `{"status":"OK"}`)
+    })
+
+   http.HandleFunc("/help", func(writer http.ResponseWriter, request *http.Request) {
+        fmt.Fprintf(writer,"This is the help page. Time now: %s", time.Now().Format(time.RFC822))
+    })
+
+    // Listen in on port 9000 on any address and use our simple handler
+    // which implements the Handler interface
+    http.ListenAndServe(":9000", nil)
+}</code></pre>
+
+    <h1>Serving files</h1>
+    <p>The <span class="code">http.FileServer()</span> function provides the functionality to serve the entire file-system directory with indexes:</p>
+    <p class="codeBlock">func FileServer(root FileSystem) Handler</p>
+    <p>The <span class="code">root</span> argument of type <span class="code">FileSystem</span> represents the file-system directory from which the content will be served. We can create a <span class="code">FileSystem</span> instance as follows:</p>
+    <p class="codeBlock">var fs FileSystem = http.Dir("/tmp")</p>
+
+    <p>An index is a list of files and folders contained in a directory. When a directory does not contain <span class="code">index.html</span> file, these servers take the responsibility of returning HTML with a list of these files and folders. This is the output of the code below</p>
+
+    <pre><code>var fileSystem = http.Dir("C:\\Projects_Go\\SimpleHttpServer")
+var fileServer = http.FileServer(fileSystem);
+http.Handle("/files<b>/</b>", http.<b>StripPrefix</b>( "/files", fileServer ))    // requires a trailing /</code></pre>
+
+<p>Note two issues with the code:
+    <ul>
+        <li><span class="code">http.Handle</span> in comparison with <span class="code">http.HandleFunc</span> needs a trailing / to successfully work. </li>
+        <li>The <span class="code">http.FileServer</span> serves the file by looking at the request URL. Since our request URL is <span class="code">c:/projects/projects_go/simplehttpserver/files</span>, it will try to look for files inside root directory with the path <span class="code">/files</span> and it does not exist. We remove <span class="code">/files</span> part from the URL using <span class="code">http.StripPrefix</span></li>
+    </ul>
+</p>
+
+    <h2>ServeFile function</h2>
+    <p>The <span class="code">http</span> package provides a <span class="code">ServeFile</span> function to serve a file on the disk using its file path. This function has the below syntax:</p>
+        <p class="codeBlock">func ServeFile(w http.ResponseWriter, r *http.Request, name string)</p>
+
+    <h1>Secure HTTPS servers</h1>
+    <p>The simplest HTTP server requires only <span class="code">http.ListenAndServe</span> function to start an HTTP server, and <span class="code">http.HandleFunc</span> to register a response handler for a particular endpoint.</p>
+
+    <p>To start an HTTPS server, all we need do is to call <span class="code">ListenAndServeTLS</span> method with some configuration:</p>
+    <p class="codeBlock">func ListenAndServeTLS(addr string, <i>certFile string, keyFile string</i>, handler Handler) error</p>
+
+    <p>Note the additional <span class="code">certFile</span> and <span class="code">keyFile</span> arguments. These are the paths to the SSL certificate file and private key file, respectively.</p>
+
+    <h3>Generating a private key and an SSL certificate</h3>
+    <p>The following command generates a <span class="code">localhost.key</span> file which is the private key, and <span class="code">localhost.csr</span> which is the certificate signing request that contains the public key.</p>
+    <p class="codeBlock">$ openssl req -new -newkey rsa:2048 -nodes -keyout <span style="color: red">localhost.key</span> -out localhost.csr</p>
+    <p>This command generates the <span class="code">localhost.crt</span> file which is the self-signed certificate signed by our own <span class="code">localhost.key</span> private key. The <span class="code">x509</span> flag states the standard format of an SSL/TLS certificate which is X.509.</p>
+    <p class="codeBlock">$ openssl  x509  -req  -days 365  -in localhost.csr  -signkey localhost.key  -out <span style="color: red">localhost.crt</span></p>
+
+    <p>Now that we have both private key and certificate files, we can modify our earlier Go program and use <span class="code">ListenAndServeTLS</span> method instead:</p>
+    <pre><code>http.ListenAndServeTLS(":9000", "localhost.crt", "localhost.key", nil)</code></pre>
+
+    <h3>ListAndServerTLS method</h3>
+    <p><span class="code">http.Server</span> struct is used to define parameters for running an HTTP server. The following is a minimum configuration for an HTTPS server:</p>
+
+    <pre><code>type Server struct {
+    Addr    string          // TCP address to listen on
+    Handler Handler         // http.DefaultServeMux if `nil`
+    TLSConfig *tls.Config   // TLS configuration for HTTPS protocolz
+
+}</code></pre>
+
+    <p>An <span class="code">http.Server</span> instance has similar methods exported by <span class="code">http</span> package like <span class="code">ListenAndServe</span>, <span class="code">ListenAndServeTLS</span>, etc. The following shows how to initialize an instance of <span class="code">http.Server</span> to start an HTTP server:</p>
+
+    <pre><code>// Register a few routes
+http.HandleFunc("/", func(writer http.ResponseWriter, request *http.Request) {
+    // Get the response header
+    header := writer.Header()
+
+    // Let browser know we are sending back JSON
+    header.Set("Content-Type", "application/json")
+
+    // Reset header data
+    header.Set("Date", time.Now().Format(time.RFC3339))
+
+    // Reset header status
+    writer.WriteHeader(http.StatusOK)
+
+    // Respond with a JSON string
+    fmt.Fprint(writer, `{"status":"OK"}`)
+})
+http.HandleFunc("/help", func(writer http.ResponseWriter, request *http.Request) {
+    fmt.Fprintf(writer,"This is the help page. Time now: %s", time.Now().Format(time.RFC822))
+})
+
+// Handler to server a file system directory
+var fileSystem = http.Dir("C:\\Projects_Go\\SimpleHttpServer")
+var fileServer = http.FileServer(fileSystem);
+http.Handle("/files/", http.StripPrefix( "/files", fileServer ))		// requires a trailing /
+
+// Create a custom server
+var server http.Server = http.Server{
+    Addr: ":9000",
+    Handler: nil,		// uses http.DefaultServerMux
+}
+log.Fatal(server.ListenAndServeTLS("localhost.crt", "localhost.key"))</code></pre>
+
+    <p>Compare the code above with the previous code that used <span class="code">http.ListenAndServer</span></p>
+    <pre><code>// Same as above
+        ...
+// Listen in on port 9000 on any address and use our simple handler
+// which implements the Handler interface
+http.ListenAndServe(":9000", nil)</code></pre>
+
+<h2>TLSConfig field</h2>
+    <p>The <span class="code">TLSConfig</span> field of the Server structure has the <span class="code">*tls.Config</span> type. The <span class="code">Config</span> structure provided by the <span class="code">crypto/tls</span> package configures the TLS parameters of <span class="code">http.Server</span> like server certificates among others. All fields of the <span class="code">Config</span> structure are optional. Hence assigning an empty struct value to <span class="code">TLSConfig</span> field won’t be any different than assigning a <span class="code">nil</span> value just like before.</p>
+
+    <p>The <span class="code">Certificates</span> field of the <span class="code">Config</span> structure sets a list of private key and SSL certificate pairs to use when a client connects to the server. Depending on the client's TLS handshake, a suitable pair is chosen automatically by Go. The <span class="code">Certificate</span> is a complex structure type on its own. To generate one, use <span class="code">tls.LoadX509KeyPair</span> function:</p>
+    <p class="codeBlock">func LoadX509KeyPair(certFile, keyFile string) (Certificate, error)</p>
+
+    <p>The following code illustrates</p>
+    <pre><code>// Generate a certificate struct
+certificate, err := tls.LoadX509KeyPair("localhost.crt", "localhost.key")
+if err != nil {
+    log.Fatalf("Error loading certificate: %s", err.Error())
+}
+
+// Create a custom server
+var server http.Server = http.Server{
+    Addr: ":9000",
+    Handler: nil,		// uses http.DefaultServerMux
+    TLSConfig: &tls.Config{
+            Certificates: []tls.Certificate{certificate},
+        },
+    }
+log.Fatal(server.ListenAndServeTLS("",""))</code></pre>
+
+    <p>https://medium.com/rungo/secure-https-servers-in-go-a783008b36da<br>https://medium.com/jspoint/a-brief-overview-of-the-tcp-ip-model-ssl-tls-https-protocols-and-ssl-certificates-d5a6269fe29e</p>
+
+    <h1>Running multiple HTTP servers</h1>
+    https://medium.com/rungo/running-multiple-http-servers-in-go-d15300f4e59f

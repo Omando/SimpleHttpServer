@@ -21,13 +21,15 @@
 
 </style>
 
-<h1>Introduction<h1></h1>
+<html>
+<body>
+<h1>Introduction</h1>
     <p> The HTTP protocol is an internet protocol made up of TCP and IP protocols. When a browser or some other HTTP client sends an HTTP request to a machine, the data is sent in packets. These packets are assembled by the HTTP server and the server may choose to respond with some data requested by the client over the same request connection.</p>
 
     <p>An HTTP server is a program that listens and responds to HTTP requests coming on a specific port of the machine's address. A machine can have multiple addresses:</p>
     <ul>
         <li>An IPV4 loopback address which resolves to itself. For example, 127.0.0.1, or 192.168.1.123</li>
-        <li>A static internet adddress, for example, 10.11.12.13</li>
+        <li>A static internet address, for example, 10.11.12.13</li>
     </ul>
 
     <p>An HTTP server may choose to listen on a  specific address or perhaps, all the machine addresses using a 0.0.0.0 address.</p>
@@ -44,7 +46,7 @@
     </ul>
 <p>See <span class="code">https://golang.org/pkg/net/#pkg-subdirectories</span> for more details<p></p>
 
-<h1>Simple HTTP server<h1></h1>
+<h1>Simple HTTP server</h1>
     <p>The <span class="code">http.ListenAndServe</span> function starts an HTTP server and <b>locks the process</b>. This means that any code below this function call will not be executed. The process will be terminated if this function returns an error or if the process is killed using a keyboard interrupt (using ctrl+c):</p>
 
 
@@ -136,7 +138,9 @@ func (sh SimpleHandler) ServeHTTP(res http.ResponseWriter, req *http.Request) {
     <p class="codeBlock">HandleFunc(route string, handler func(ResponseWriter, *Request))
     </p>
     <p>and then passing the  <span class="code">ServerMux</span> instance to  <span class="code">ListenAndServer</span>:</p>
-    <p class="codeBlock">ListenAndServe(addr, mux)</p></p>
+    <p class="codeBlock">ListenAndServe(addr, mux)</p>
+
+<p>The following code illustrates:</p>
 
     <pre><code>func main() {
     // Create an instance of ServeMux
@@ -178,12 +182,11 @@ func (sh SimpleHandler) ServeHTTP(res http.ResponseWriter, req *http.Request) {
 }</code></pre>
 
 <h2>Better responses</h2>
-    <p>A normal HTTP response contains headers to inform the browser about the response. The <span class="code">ResponseWriter</span> interface offers the following useful methods.
+    <p>A normal HTTP response contains headers to inform the browser about the response. The <span class="code">ResponseWriter</span> interface offers the following useful methods:</p>
 <ul>
 <li>The <span class="code">ResponseWriter.Header()</span> returns the object of <span class="code">Header</span> type. This object contains the map of header keys and values. We can use <span class="code">Add</span>, <span class="code">Set</span> and <span class="code">Del</span> methods to manipulate the response headers. We can use the <span class="code">Get</span> method to read existing response headers.</li>
         <li>The <span class="code">ResponseWriter.WriteHeader(int)</span> method writes the HTTP status code header to the response. However, this method is called implicitly by Go when first <span class="code">ResponseWriter.Write()</span> call is made with status code 200 (<span class="code">http.StatusOK</span> constant value). We should pass valid HTTP status integer code or use constants provided by the <span class="code">http</span> package.</li>
-</ul></p>
-
+</ul>
     <p>The following code adds a <span class="code">Content-Type</span> header and resets the <span class="code">Date</span> header from the response. The code also sends a JSON string as a response. To notify the browser that the incoming response is of the JSON type, the code sets <span class="code">application/json</span> as the value of <span class="code">Content-Type</span> header:</p>
 
     <pre><code>func main() {
@@ -333,4 +336,87 @@ log.Fatal(server.ListenAndServeTLS("",""))</code></pre>
     <p>https://medium.com/rungo/secure-https-servers-in-go-a783008b36da<br>https://medium.com/jspoint/a-brief-overview-of-the-tcp-ip-model-ssl-tls-https-protocols-and-ssl-certificates-d5a6269fe29e</p>
 
     <h1>Running multiple HTTP servers</h1>
-    https://medium.com/rungo/running-multiple-http-servers-in-go-d15300f4e59f
+<p>Recall that <span class="code">http.ListenAndServer</span> is a blocking function. So what if we want to run multiple servers? When we call <span class="code">http.ListenAndServer()</span> with appropriate arguments, it starts an HTTP server and <i>blocks the current goroutine</i>. If we run this function inside the <span class="code">main</span> function, it will block the <span class="code">main</span> goroutine (started by the <span class="code">main</span> function). The following is the standard pattern to spawn multiple HTTP servers:</p>
+
+<pre><code>func main() {
+    <b>// Create a wait group (count down) to wait for two http servers to terminate
+    waitGroup := sync.WaitGroup{}
+    waitGroup.Add(2)</b>
+
+    // Register a few routes (shared by both server, for now)
+    http.HandleFunc("/", func(writer http.ResponseWriter, request *http.Request) {
+        // Get the response header
+        header := writer.Header()
+
+        // Let browser know we are sending back JSON
+        header.Set("Content-Type", "application/json")
+
+        // Reset header data
+        header.Set("Date", time.Now().Format(time.RFC3339))
+
+        // Reset header status
+        writer.WriteHeader(http.StatusOK)
+
+        // Respond with a JSON string
+        fmt.Fprint(writer, `{"status":"OK"}`)
+    })
+    http.HandleFunc("/help", func(writer http.ResponseWriter, request *http.Request) {
+        fmt.Fprintf(writer,"This is the help page. Time now: %s", time.Now().Format(time.RFC822))
+    })
+
+    // Handler to server a file system directory
+    var fileSystem = http.Dir("C:\\Projects_Go\\SimpleHttpServer")
+    var fileServer = http.FileServer(fileSystem);
+    http.Handle("/files/", http.StripPrefix( "/files", fileServer ))		// requires a trailing /
+
+    <b>// Start one server
+    go func() {
+        // Listen in on port 9000 on any address
+        log.Fatal(http.ListenAndServe(":9000", nil))
+        waitGroup.Done()
+    }()
+
+    // Start another server
+    go func() {
+        // Listen in on port 9000 on any address
+        log.Fatal(http.ListenAndServe(":9001", nil))
+        waitGroup.Done()
+    }()
+
+    // Wait for both servers to terminate
+    waitGroup.Wait()</b>
+}</code></pre>
+
+<p>The code above uses Go's standard implementation of an HTTP server. This means both of our HTTP servers are using the same handlers. For example <span class="code">http://127.0.0.1:9000/files/</span> and <span class="code">http://127.0.0.1:9001/files/</span> will both invoke the same <span class="code">/files</span> handler. The solution is to provide separate routing mechanisms.</p>
+
+<h2>http.Server type</h2>
+<p>One solution to provide separate routing mechanisms is by creating a distinct <span class="code">ServeMux</span> for each of these servers. Recall how <span class="code">ServeMux</span> is used:</p>
+
+<pre><code>func main() {
+    // Create an instance of ServeMux
+    mux := http.NewServeMux()
+
+    // Register a few routes
+    mux.HandleFunc("/", func(writer http.ResponseWriter, request *http.Request) {
+        fmt.Fprintf(writer, "This is the root page")
+    })
+
+    mux.HandleFunc("/help", func(writer http.ResponseWriter, request *http.Request) {
+        fmt.Fprintf(writer,"This is the help page. Time now: %s", time.Now().Format(time.RFC822))
+    })
+
+    // Listen in on port 9000 on any address and use our simple handler
+    // which implements the Handler interface
+    http.ListenAndServe(":9000", mux)
+}</code></pre>
+
+<p>While the above approach works, a more elegant solution is to create and configure a custom HTTP server using the <span class="code">http.Server</span> struct: The <span class="code">Addr</span> and <span class="code">Handler</span> fields are similar to <span class="code">http.ListAndServer</span> parameters. The <span class="code">ReadTimeout</span> and <span class="code">WriteTimeout</span> fields are important for added safety. <span class="code">ErrorLog</span> is <b>crucial</b> to log any errors thrown by the server while processing a request.</p>
+
+
+
+    <p>https://medium.com/rungo/running-multiple-http-servers-in-go-d15300f4e59f</p>
+
+    <h1>Making external HTTP requests</h1>
+    <p>https://medium.com/rungo/making-external-http-requests-in-go-eb4c015f8839</p>
+</body>
+</html>

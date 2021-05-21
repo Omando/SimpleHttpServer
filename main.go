@@ -8,18 +8,14 @@ import (
 	"time"
 )
 
-/* To build and run
-go build
-go run .
-open a browser on: http://127.0.0.1:9000
-*/
-func main() {
-	// Create a wait group (count down) to wait for two http servers to terminate
-	waitGroup := sync.WaitGroup{}
-	waitGroup.Add(2)
+func createServer(port int) *http.Server {
+	// Create a new ServeMux: Recall that a ServeMux is an HTTP request multiplexer.
+	// It matches the URL of each incoming request against a list of registered patterns
+	//and calls the handler for the pattern that most closely matches the URL.
+	mux := http.NewServeMux()
 
-	// Register a few routes (shared by both server, for now)
-	http.HandleFunc("/", func(writer http.ResponseWriter, request *http.Request) {
+	// Register a handle for the root
+	mux.HandleFunc("/", func(writer http.ResponseWriter, request *http.Request) {
 		// Get the response header
 		header := writer.Header()
 
@@ -35,19 +31,35 @@ func main() {
 		// Respond with a JSON string
 		fmt.Fprint(writer, `{"status":"OK"}`)
 	})
-	http.HandleFunc("/help", func(writer http.ResponseWriter, request *http.Request) {
+
+	mux.HandleFunc("/help", func(writer http.ResponseWriter, request *http.Request) {
 		fmt.Fprintf(writer, "This is the help page. Time now: %s", time.Now().Format(time.RFC822))
 	})
 
-	// Handler to server a file system directory
-	var fileSystem = http.Dir("C:\\Projects_Go\\SimpleHttpServer")
-	var fileServer = http.FileServer(fileSystem)
-	http.Handle("/files/", http.StripPrefix("/files", fileServer)) // requires a trailing /
+	// Create a new http server by initializing a Server struct with appropriate parameters
+	//for running an HTTP server. The zero value for Server is a valid configuration
+	server := http.Server{
+		Addr:    fmt.Sprintf(":%v", port),
+		Handler: mux,
+	}
+
+	return &server
+}
+
+/* To build and run
+go build
+go run .
+open a browser on: http://127.0.0.1:9000
+*/
+func main() {
+	// Create a wait group (count down) to wait for two http servers to terminate
+	waitGroup := sync.WaitGroup{}
+	waitGroup.Add(2)
 
 	// Start one server
 	go func() {
-		// Listen in on port 9000 on any address
-		err := http.ListenAndServe(":9000", nil)
+		server := createServer(9000)
+		err := server.ListenAndServe()
 		if err != nil {
 			log.Printf("Server at port 9000 failed: %s\n", err.Error())
 		}
@@ -56,8 +68,8 @@ func main() {
 
 	// Start another server
 	go func() {
-		// Listen in on port 9000 on any address
-		err := http.ListenAndServe(":9001", nil)
+		server := createServer(9001)
+		err := server.ListenAndServe()
 		if err != nil {
 			log.Printf("Server at port 9001 failed: %s\n", err.Error())
 		}

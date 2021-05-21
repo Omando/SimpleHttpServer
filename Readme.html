@@ -336,7 +336,7 @@ log.Fatal(server.ListenAndServeTLS("",""))</code></pre>
     <p>https://medium.com/rungo/secure-https-servers-in-go-a783008b36da<br>https://medium.com/jspoint/a-brief-overview-of-the-tcp-ip-model-ssl-tls-https-protocols-and-ssl-certificates-d5a6269fe29e</p>
 
     <h1>Running multiple HTTP servers</h1>
-<p>Recall that <span class="code">http.ListenAndServer</span> is a blocking function. So what if we want to run multiple servers? When we call <span class="code">http.ListenAndServer()</span> with appropriate arguments, it starts an HTTP server and <i>blocks the current goroutine</i>. If we run this function inside the <span class="code">main</span> function, it will block the <span class="code">main</span> goroutine (started by the <span class="code">main</span> function). The following is the standard pattern to spawn multiple HTTP servers:</p>
+<p>Recall that <span class="code">http.ListenAndServer</span> is a blocking function. When we call <span class="code">http.ListenAndServer()</span> with appropriate arguments, it starts an HTTP server and <i>blocks the current goroutine</i>. If we run this function inside the <span class="code">main</span> function, it will block the <span class="code">main</span> goroutine (started by the <span class="code">main</span> function). So what if we want to run multiple servers? The following is the standard pattern to spawn multiple HTTP servers:</p>
 
 <pre><code>func main() {
     <b>// Create a wait group (count down) to wait for two http servers to terminate
@@ -390,7 +390,7 @@ log.Fatal(server.ListenAndServeTLS("",""))</code></pre>
 <p>The code above uses Go's standard implementation of an HTTP server. This means both of our HTTP servers are using the same handlers. For example <span class="code">http://127.0.0.1:9000/files/</span> and <span class="code">http://127.0.0.1:9001/files/</span> will both invoke the same <span class="code">/files</span> handler. The solution is to provide separate routing mechanisms.</p>
 
 <h2>http.Server type</h2>
-<p>One solution to provide separate routing mechanisms is by creating a distinct <span class="code">ServeMux</span> for each of these servers. Recall how <span class="code">ServeMux</span> is used:</p>
+<p>To provide each http server with its own routing handles, we could create a distinct <span class="code">ServeMux</span> for each of these servers. Recall how <span class="code">ServeMux</span> is used:</p>
 
 <pre><code>func main() {
     // Create an instance of ServeMux
@@ -405,16 +405,98 @@ log.Fatal(server.ListenAndServeTLS("",""))</code></pre>
         fmt.Fprintf(writer,"This is the help page. Time now: %s", time.Now().Format(time.RFC822))
     })
 
-    // Listen in on port 9000 on any address and use our simple handler
-    // which implements the Handler interface
+    // Listen in on port 9000 on any address and a ServerMux instance
+    // (htpp.ServerMux implements the Handler interface)
     http.ListenAndServe(":9000", mux)
 }</code></pre>
 
-<p>While the above approach works, a more elegant solution is to create and configure a custom HTTP server using the <span class="code">http.Server</span> struct: The <span class="code">Addr</span> and <span class="code">Handler</span> fields are similar to <span class="code">http.ListAndServer</span> parameters. The <span class="code">ReadTimeout</span> and <span class="code">WriteTimeout</span> fields are important for added safety. <span class="code">ErrorLog</span> is <b>crucial</b> to log any errors thrown by the server while processing a request.</p>
+<p>While the above approach works, a more elegant solution is to create and configure a custom HTTP server using the <span class="code">http.Server</span> struct:</p>
+<ul>
+    <li>The <span class="code">Addr</span> and <span class="code">Handler</span> fields are similar to <span class="code">http.ListAndServer</span> parameters.</li>
+    <li>The <span class="code">ReadTimeout</span> and <span class="code">WriteTimeout</span> fields are important for added safety.</li>
+    <li><span class="code">ErrorLog</span> is <b>crucial</b> to log any errors thrown by the server while processing a request.</li>
+</ul>
 
+<p>The following code illustrates:</p>
+<pre><code>func createServer(port int) *http.Server {
+    // Create a new ServeMux: Recall that a ServeMux is an HTTP request multiplexer.
+    // It matches the URL of each incoming request against a list of registered patterns
+    //and calls the handler for the pattern that most closely matches the URL.
+    mux := http.NewServeMux()
 
+    // Register a handle for the root
+    mux.HandleFunc("/", func(writer http.ResponseWriter, request *http.Request) {
+        // Get the response header
+        header := writer.Header()
 
-    <p>https://medium.com/rungo/running-multiple-http-servers-in-go-d15300f4e59f</p>
+        // Let browser know we are sending back JSON
+        header.Set("Content-Type", "application/json")
+
+        // Reset header data
+        header.Set("Date", time.Now().Format(time.RFC3339))
+
+        // Reset header status
+        writer.WriteHeader(http.StatusOK)
+
+        // Respond with a JSON string
+        fmt.Fprint(writer, `{"status":"OK"}`)
+    })
+
+    mux.HandleFunc("/help", func(writer http.ResponseWriter, request *http.Request) {
+        fmt.Fprintf(writer, "This is the help page. Time now: %s", time.Now().Format(time.RFC822))
+    })
+
+    // Create a new http server by initializing a Server struct with appropriate parameters
+    // for running an HTTP server.
+    server := http.Server{
+        Addr: fmt.Sprintf(":%v", port),
+        Handler: mux,
+    }
+
+    return &server
+}
+
+func main() {
+    // Create a wait group (count down) to wait for two http servers to terminate
+    waitGroup := sync.WaitGroup{}
+    waitGroup.Add(2)
+
+    // Start one server
+    go func() {
+        <b>server := createServer(9000)</b>
+
+        // No arguments are required for ListenAndServe since the configuration of the
+        // server is present in the server struct itself.
+        err := server.ListenAndServe()
+        if err != nil {
+            log.Printf("Server at port 9000 failed: %s\n", err.Error())
+        }
+        waitGroup.Done()
+    }()
+
+    // Start another server
+    go func() {
+        <b>server := createServer(9001)</b>
+
+        // No arguments are required for ListenAndServe since the configuration of the
+        // server is present in the server struct itself.
+        err := server.ListenAndServe()
+        if err != nil {
+            log.Printf("Server at port 9001 failed: %s\n", err.Error())
+        }
+        waitGroup.Done()
+    }()
+
+    // Wait for both servers to terminate
+    waitGroup.Wait()
+}</code></pre>
+
+<p>Here are some common methods on <span class="code">http.Server</span> struct:</p>
+<p><span class="code">Server.SetKeepAliveEnabled</span>: Enables the HTTP persistent connection. By default, this is enabled for better performance</p>
+<p><span class="code">Server.Close</span>: Once a server is no longer needed, we can close it without terminating the main program by calling this method. The following code shows an example:
+</p>
+
+<p>https://medium.com/rungo/running-multiple-http-servers-in-go-d15300f4e59f</p>
 
     <h1>Making external HTTP requests</h1>
     <p>https://medium.com/rungo/making-external-http-requests-in-go-eb4c015f8839</p>

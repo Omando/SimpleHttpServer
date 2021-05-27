@@ -493,12 +493,101 @@ func main() {
 
 <p>Here are some common methods on <span class="code">http.Server</span> struct:</p>
 <p><span class="code">Server.SetKeepAliveEnabled</span>: Enables the HTTP persistent connection. By default, this is enabled for better performance</p>
-<p><span class="code">Server.Close</span>: Once a server is no longer needed, we can close it without terminating the main program by calling this method. The following code shows an example:
-</p>
+<p><span class="code">Server.Close</span>: Once a server is no longer needed, we can close it without terminating the main program by calling this method. The following code shows an example:</p>
+
+<pre><code>func main() {
+    // create channels for safe exit
+    exitSignal := make( chan interface{} )
+
+    // create server to run on port the 9000
+    server := &http.Server {
+        Addr: ":9000",
+        Handler: nil, // use `DefaultServeMux`
+    }
+
+    // close server after 3 seconds.
+    time.AfterFunc( 3 * time.Second, func() {
+        fmt.Println("Close(): completed!")
+        server.Close()
+        // closing exitSignal unblocks the main goroutine
+        close( exitSignal ) // close `exitSignal` channel
+    })
+
+    // launch server
+    err := server.ListenAndServe()
+    fmt.Println( "ListenAndServe():", err )
+
+    // listen to `exitSignal` channel
+    <- exitSignal
+    fmt.Println("Main(): exit complete!")
+}</code></pre>
+<p><span class="code">Server.Shutdown</span>: This method behaves exactly like <span class="code">server.Close</span> but allows you to register a function to perform any required clean up operations.</p>
 
 <p>https://medium.com/rungo/running-multiple-http-servers-in-go-d15300f4e59f</p>
 
-    <h1>Making external HTTP requests</h1>
-    <p>https://medium.com/rungo/making-external-http-requests-in-go-eb4c015f8839</p>
+<h1>Making external HTTP requests</h1>
+<p>When a browser sends an HTTP request to a server, it sends an HTTP request object that contains the starting line,
+    an optional set of headers and an optional body containing data associated with the request.
+    When the server receives the request, it responds with an HTTP response object with a similar structure to that of
+    the HTTP request. A backend (server) can also act as a browser, and it too can send HTTP requests to fetch some data from
+    a remote server. However, the mechanism to send a request and handle the response is manual.</p>
+
+<h3>http.Get</h3>
+<p>The <span class="code">http.Get</span> function sends an HTTP GET request to a remote server.</p>
+<p class="codeBlock">func Get(url string) (res *Response, err error)</p>
+<p>The <span class="code">url</span> is a fully qualified URL string. If the server responds with a redirect,
+    <span class="code">http.Get</span> follows the redirect URL up to a maximum of 10 redirects. </p>
+<xx></xx>
+<p>If we look at the field of <span class="code">http.Response</span> object, the most important fields are:</p>
+<ul>
+    <li><span class="code"><b>StatusCode</b></span> (<span class="code">int</span>): indicates the HTTP response
+        status code</li>
+    <li><span class="code"><b>Header</b></span> (<span class="code">http.Header</span>):A <span class="code">map</span>-derived
+        type which contains the response headers</li>
+    <li><span class="code"><b>Body</b></span> (<span class="code">io.ReadCloser</span> interface): contains the raw
+        response body</li>
+</ul>
+    <p>The following shows a basic usage of http.Get to fetch some JSON from a mock data website:</p>
+
+<pre><code>mux.HandleFunc("/get", func(writer http.ResponseWriter, request *http.Request) {
+    // Request some data from a remove server
+    res, err := http.Get("https://jsonplaceholder.typicode.com/todos/1")
+
+    // Check for errors
+    if err != nil {
+        fmt.Fprintf(writer, "Error: %v", err)
+    } else {
+        // Read the response body
+        data, _  := <b>ioutil.ReadAll(res.Body)</b>
+
+        // Get the value of the Content-Type header
+        contentType := res.Header.Get("Content-Type")
+
+        // Close the response body and send data back. The data variable contains the response
+        // body as []byte slice. Since JSON data is a text data, we can print it as a string.
+        res.Body.Close()
+        fmt.Fprintf(writer, "%s\n", data)
+        fmt.Fprintf(writer, "%s\n", contentType)
+    }
+})</code></pre>
+
+<h3>http.Post</h3>
+<p>The <span class="code">http.Post</span> function sends an HTTP POST request to a remote server with an
+    optional request body:</p>
+
+<p class="codeBlock">func Post(url, contentType string, body io.Reader) (*Response, error)</p>
+
+<p>The <span class="code">contentType</span> argument sets the value of the <span class="code">Content-Type</span>
+    header in the POST request that gets sent to the server. This header describes the type of data we are sending in
+    the <span class="code">body</span> argument. The following example shows how to use <span class="code">http.Post</span>.
+    Note the use of <span class="code">strings.NewReader</span> to create the body for the <span class="code">
+        POST</span> request:</p>
+
+<br><br><br>
+<p>To send HTTP requests, we need a <span class="code">http.Client</span> object. A minimal configuration can
+    be obtained as follows:</p>
+<p class="codeBlock">var defaultClient = &http.Client{}</p>
+
+<p>https://medium.com/rungo/making-external-http-requests-in-go-eb4c015f8839</p>
 </body>
 </html>

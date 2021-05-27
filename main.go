@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"sync"
@@ -34,6 +35,28 @@ func createServer(port int) *http.Server {
 
 	mux.HandleFunc("/help", func(writer http.ResponseWriter, request *http.Request) {
 		fmt.Fprintf(writer, "This is the help page. Time now: %s", time.Now().Format(time.RFC822))
+	})
+
+	mux.HandleFunc("/get", func(writer http.ResponseWriter, request *http.Request) {
+		// Request some data from a remove server
+		res, err := http.Get("https://jsonplaceholder.typicode.com/todos/1")
+
+		// Check for errors
+		if err != nil {
+			fmt.Fprintf(writer, "Error: %v", err)
+		} else {
+			// Read the response body
+			data, _ := ioutil.ReadAll(res.Body)
+
+			// Get the value of the Content-Type header
+			contentType := res.Header.Get("Content-Type")
+
+			// Close the response body and send data back
+			res.Body.Close()
+			fmt.Fprintf(writer, "%s\n", data)
+			fmt.Fprintf(writer, "%s\n", contentType)
+
+		}
 	})
 
 	// Create a new http server by initializing a Server struct with appropriate parameters
@@ -78,4 +101,5 @@ func main() {
 
 	// Wait for both servers to terminate
 	waitGroup.Wait()
+	fmt.Println("Both server terminated")
 }

@@ -2,9 +2,12 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
+	"net/url"
+	"strings"
 	"sync"
 	"time"
 )
@@ -55,7 +58,55 @@ func createServer(port int) *http.Server {
 			res.Body.Close()
 			fmt.Fprintf(writer, "%s\n", data)
 			fmt.Fprintf(writer, "%s\n", contentType)
+		}
+	})
 
+	mux.HandleFunc("/post", func(writer http.ResponseWriter, request *http.Request) {
+		// Request body
+		var body *strings.Reader = strings.NewReader(`{"title":"My title", "body": "Some body", "userId": 1 }`)
+		var contentType string = "application/json;charset=UTF-8"
+		res, err := http.Post("https://jsonplaceholder.typicode.com/posts", contentType, body)
+
+		if err != nil {
+			fmt.Fprintf(writer, "Error: %v", err)
+		} else {
+			// Read response data
+			data, _ := ioutil.ReadAll(res.Body)
+			res.Body.Close()
+
+			// Display response data
+			fmt.Fprintf(writer, "%s\n", data)
+		}
+	})
+
+	mux.HandleFunc("/post-man", func(writer http.ResponseWriter, request *http.Request) {
+
+		requestUrl, _ := url.Parse("https://jsonplaceholder.typicode.com/posts")
+
+		var bodyReader *strings.Reader = strings.NewReader(`{"title":"My title", "body": "Some body", "userId": 1 }`)
+		var body io.ReadCloser = ioutil.NopCloser(bodyReader)
+
+		// Create an http request
+		serverRequest := &http.Request{
+			URL:    requestUrl,
+			Method: "POST",
+			Body:   body,
+			Header: http.Header{
+				"Content-Type": {"application/json;charset=UTF-8"},
+			},
+		}
+
+		// Send the http request
+		res, err := http.DefaultClient.Do(serverRequest)
+		if err != nil {
+			fmt.Fprintf(writer, "Error: %v", err)
+		} else {
+			// Read response data
+			data, _ := ioutil.ReadAll(res.Body)
+			res.Body.Close()
+
+			// Display response data
+			fmt.Fprintf(writer, "%s\n", data)
 		}
 	})
 

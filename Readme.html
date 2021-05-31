@@ -70,7 +70,7 @@
     <p>We can pass a value of the type that implements this interface as an argument to the <span class="code">ListenAndServe</span> function, but typically a <span class="code">nil</span> is passed in (details below)</p>
 
     <h2>ServeHTTP function</h2>
-    <p>Recall that the <span class="code">handle</span> argument type is <span class="code">Handler</span>, which is an interface that exposes a <span class="code">ServeHTTP</span> method. When the HTTP server is started by invoking <span class="code">ListenAndServe(addr, handler)</span> function, any incoming HTTP request will trigger the <span class="code">ServeHTTP</span> method of the <span class="code">handler</span> argument. The main job of <span class="code">ServeHTTP</span> method is to respond to the request with some data</p>
+    <p>Recall that the <span class="code">handle</span> argument type is <span class="code">Handler</span>, which is an interface that exposes a <span class="code">ServeHTTP</span> method. When the HTTP server is started by invoking <span class="code">ListenAndServe(addr, handler)</span> function, any incoming HTTP request will trigger the <span class="code">ServeHTTP</span> method of the <span class="code">handler</span> argument. The main job of <span class="code">ServeHTTP</span> method is to respond to the request with some data:</p>
 
     <p class="codeBlock">ServeHTTP(res http.ResponseWriter, req *http.Request)</p>
 
@@ -583,11 +583,195 @@ func main() {
     Note the use of <span class="code">strings.NewReader</span> to create the body for the <span class="code">
         POST</span> request:</p>
 
-<br><br><br>
-<p>To send HTTP requests, we need a <span class="code">http.Client</span> object. A minimal configuration can
-    be obtained as follows:</p>
-<p class="codeBlock">var defaultClient = &http.Client{}</p>
+<pre><code>mux.HandleFunc("/post", func(writer http.ResponseWriter, request *http.Request) {
+    // Request body: Since request body should be io.Reader object, strings.NewReader function
+    // is used to create an io.Reader from a JSON string
+    var body *strings.Reader = strings.NewReader(`{"title":"My title", "body": "Some body", "userId": 1 }`)
+
+    // Sent a post request
+    var contentType string = "application/json;charset=UTF-8"
+    res, err := http.Post("https://jsonplaceholder.typicode.com/posts", contentType, body )
+
+    if err != nil {
+        fmt.Fprintf(writer, "Error: %v", err)
+    } else {
+        // Read response data
+        data, _ := ioutil.ReadAll(res.Body)
+        res.Body.Close()
+
+        // Display response data
+        fmt.Fprintf(writer ,"%s\n", data)
+    }
+})</code></pre>
+
+<p>If you have a JSON compatible data structure like <span class="code">struct</span> or <span class="code">map</span>,
+    then you can use <span class="code">json.Marshal</span> function to encode the data structure to JSON data,
+    and then use <span class="code">bytes.NewReader</span> function to convert JSON data to an <span class="code">
+        io.Reader object</span>.</p>
+
+
+<h3>Custom requests</h3>
+<p>Previous sections showed how to use <span class="code">http.Get</span> and <span class="code">http.Post</span> to
+    send simple HTTP requests. These functions take care of setting up all required HTTP headers. The following shows
+    how to set up custom request headers.</p>
+
+<p>The <span class="code">http.Request</span> struct configures the request to be sent. <span class="code">http.Get</span>,
+    <span class="code">Post</span> and other methods actually construct an <span class="code">http.Request</span> object
+    internally. This structure has multiple fields to configure TLS connection, keep-alive connection, form data, and
+    other settings, but the following fields are minimal configuration:</p>
+<pre><code>type Request struct {S
+    // HTTP method (GET, POST, PUT, etc.)
+    Method string
+
+    // request URL valu
+    URL *url.URL
+
+    // request header fields
+    Header Header
+
+    // request body
+    Body io.ReadCloser
+}</code></pre>
+
+<p>The <span class="code">*http.Request</span> struct implements many methods to modify the request object before
+    it is sent. The <span class="code">*Request.AddCookie</span> method adds a cookie on the request object
+    and <span class="code">*Request.SetBasicAuth</span> sets the basic authorization header on the request</p>
+
+<p>Once we construct a request object, we need to make a request with this request object manually. This is done
+    using <span class="code">*Client.Do</span> method. The following example illustrates:</p>
+
+<pre><code>mux.HandleFunc("/post-man", func(writer http.ResponseWriter, request *http.Request) {
+    requestUrl, _ := url.Parse("https://jsonplaceholder.typicode.com/posts")
+
+    var bodyReader *strings.Reader = strings.NewReader(`{"title":"My title", "body": "Some body", "userId": 1 }`)
+    var body io.ReadCloser = ioutil.NopCloser(bodyReader)
+
+    // Create an http request
+    serverRequest := &http.Request{
+        URL: requestUrl,
+        Method: "POST",
+        Body: body,
+        Header: http.Header{
+            "Content-Type" : {"application/json;charset=UTF-8"},
+        },
+    }
+
+    // Send the http request using DefaultClient.Do method which returns the network
+    // response and a non-nil error if the request fails
+    res, err := http.DefaultClient.Do(serverRequest)
+    if err != nil {
+        fmt.Fprintf(writer, "Error: %v", err)
+    } else {
+        // Read response data
+        data, _ := ioutil.ReadAll(res.Body)
+        res.Body.Close()
+
+        // Display response data
+        fmt.Fprintf(writer ,"%s\n", data)
+    }
+})</code></pre>
+
+<p>The request body stored in <span class="code">Request.Body</span> field should be an object that implements
+    <span class="code">io.ReadCloser</span> interface (a group of <span class="code">io.Reader</span> and
+    <span class="code">io.Closer</span> interfaces). The <span class="code">strings.NewReader</span> returns an
+    <span class="code">io.Reader</span> object and <span class="code">ioutil.NopCloser</span> function adds
+    <span class="code">Close()</span> method on the <span class="code">io.Reader</span> object. The <span class="code">Close
+    </span> method added by the <span class="code">NopCloser</span> function does nothing, it simply returns a
+    <span class="code">nil</span> error. The request body is closed for I/O via this <span class="code">Close()</span>
+    method call when the request is sent.</p>
+
+<p>Note that we can simplify the code a bit by using the <span class="code">http.NewRequest</span> function to
+    construct <span class="code">*http.Request</span> object from some simple values which has the following syntax:</p>
+
+<p class="codeBlock">func NewRequest(method, url string, body io.Reader) (*Request, error)</p>
+
+<p>This function returns a <span class="code">*http.Request</span> object and a non-nil error in case some argument
+    values are not valid. If method argument is empty, a <span class="code">GET</span> request is assumed.
+    We can then add headers to the returned <span class="code">*Request</span> object.</p>
+
+<h3>http.Client structure</h3>
+<p>The previous sections used <span class="code">http.Get</span> and <span class="code">http.Post</span> to send HTTP
+    requests. The actual implementation of <span class="code">http.Get</span> in the <span class="code">http</span> package
+    looks like this:</p>
+
+<pre><code>// DefaultClient is the default Client and is used by Get, Head, and Post.
+var DefaultClient = &Client{}
+
+func Get(url string) (resp *Response, err error) {
+	return DefaultClient.Get(url)
+}</code></pre>
+
+<p>To send HTTP requests, we have to use an <span class="code">http.Client</span> struct object. For simple HTTP requests,
+    we do not have to create our own instance of <span class="code">http.Client</span>, since the <span class="code">http</span>
+    package provides a global <span class="code">http.Client</span> struct instance through the
+    <span class="code">http.DefaultClient</span> variable. <span class="code">http.DefaultClient</span> therefore represents
+    a minimal configuration of the <span class="code">http.Client</span> structure enough to send simple HTTP requests.</p>
+
+<p><span class="code">http.Client</span> struct looks like this:</p>
+<pre><code>type Client struct {
+  // mechanism by which individual HTTP requests are made
+  Transport RoundTripper
+
+  // specifies the policy for handling redirects
+  CheckRedirect func(req *Request, via []*Request) error
+
+  // specifies the cookie jar
+  Jar CookieJar
+
+  // specifies a time limit for requests
+  Timeout time.Duration
+}</code></pre>
+
+<p>The <span class="code">Transport</span> field is an object that implements the <span class="code">RoundTrip</span> interface.
+    This object is responsible for executing a single HTTP request and returning a response. If this field value is
+    <span class="code">nil</span>, <span class="code">http.DefaultTransport</span> of type <span class="code">*http.Transport</span>
+    is used. In most cases, this default value is good enough for us.</p>
+
+<p>The <span class="code">CheckRedirect</span> field is a function that checks if a redirection demanded by a response
+    must be followed. If this value is <span class="code">nil</span>, the default policy of maximum 10 redirects is
+    used. The <span class="code">req</span> argument is the newest request and the <span class="code">via</span> argument
+    contains the older requests (in old first order). If this function returns a non-nil error, the redirection attempt
+    is blocked.</p>
+
+<p>The <span class="code">Jar</span> field specifies a mechanism to add cookies on outgoing HTTP requests and cache
+    cookies from the incoming responses. This cookie jar is consulted for every outgoing and redirected request.
+    If this value is <span class="code">nil</span>, cookies are only sent if they are specified on the request (and
+    copied to redirected requests). In the case of a redirected request, cookie jar can mutate the values of the cookie.
+    You can use the <span class="code">net/http/cookiejar</span> package to create your customized cookie jar.</p>
+
+<p>The <span class="code">Timeout</span> Timeout specifies a time limit for requests made by this <span class="code">Client</span>.
+    The timeout includes connection time, any redirects, and reading the response body. The timer remains running after
+    <span class="code">Get</span>, <span class="code">Head</span>, <span class="code">Post</span>, or <span class="code">Do</span> return
+    and will interrupt reading of the <span class="code">Response.Body</span>. A Timeout of zero means no timeout.</p>
+
+<p>The following code illustrates:</p>
+
+<pre><code>// create a new HTTP client
+client := &http.Client {
+    Timeout: 100 * time.Microsecond,
+}
+
+// send an GET request from `client`
+res, err := client.Get( "https://jsonplaceholder.typicode.com/users/1" )
+
+// check for response error
+if err != nil {
+
+    // get `url.Error` struct pointer from `err` interface
+    urlErr := err.( *url.Error )
+
+    // check if error occurred due to timeout
+    if urlErr.Timeout() {
+        fmt.Println( "Error occurred due to a timeout." );
+    }
+
+    // log error and exit
+    log.Fatal( "Error:", err )
+} else {
+    fmt.Println( "Success: status-code", res.StatusCode );
+}</code></pre>
 
 <p>https://medium.com/rungo/making-external-http-requests-in-go-eb4c015f8839</p>
+<p>https://jsonplaceholder.typicode.com/guide/</p>
 </body>
 </html>
